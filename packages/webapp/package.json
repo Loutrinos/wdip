@@ -1,0 +1,19 @@
+{
+  "name": "@wdip/webapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@wdip/shared": "workspace:*",
+    "mithril": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/mithril": "^2.2.6",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.0"
+  }
+}

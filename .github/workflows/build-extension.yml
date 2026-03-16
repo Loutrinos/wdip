@@ -1,0 +1,43 @@
+name: Build Extension ZIP
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        run: pnpm --filter @wdip/extension build
+
+      - name: Zip extension
+        run: cd packages/extension/dist && zip -r ../../../riftbound-recorder.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: riftbound-recorder-extension
+          path: riftbound-recorder.zip
+          retention-days: 30
+
+      # On version tags, attach zip to GitHub release
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: riftbound-recorder.zip

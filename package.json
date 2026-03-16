@@ -1,0 +1,19 @@
+{
+  "name": "wdip",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:webapp": "pnpm --filter @wdip/webapp dev",
+    "build:extension": "pnpm --filter @wdip/extension build",
+    "build:webapp": "pnpm --filter @wdip/webapp build"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "spawn-sync"
+    ]
+  }
+}

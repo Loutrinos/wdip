@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Riftbound Recorder</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <img src="../../icons/icon48.png" alt="" width="24" height="24" />
+    <span>Riftbound Recorder</span>
+  </header>
+
+  <div id="app">
+    <!-- Status section -->
+    <section id="status-section">
+      <div class="stat">
+        <span class="label">Turn</span>
+        <span id="turn-number" class="value">—</span>
+      </div>
+      <div class="stat">
+        <span class="label">Captured</span>
+        <span id="turn-count" class="value">0</span>
+      </div>
+    </section>
+
+    <!-- Not on tcg-arena.fr warning -->
+    <div id="wrong-page" class="hidden banner warning">
+      Open a game on <strong>tcg-arena.fr</strong> to start recording.
+    </div>
+
+    <!-- Main actions -->
+    <section id="actions-section" class="hidden">
+      <button id="btn-capture" class="btn primary">📸 Capture Turn</button>
+      <button id="btn-end" class="btn danger">🏁 End &amp; Save Game</button>
+      <button id="btn-reset" class="btn ghost" title="Discard session and start fresh">↺ Reset</button>
+    </section>
+
+    <!-- End-game form (hidden until "End & Save" is clicked) -->
+    <section id="end-form" class="hidden">
+      <h3>Save Game</h3>
+      <label>
+        Opponent
+        <input id="input-opponent" type="text" placeholder="Opponent name" autocomplete="off" />
+      </label>
+      <label>Result</label>
+      <div class="radio-group">
+        <label><input type="radio" name="result" value="win" /> Win</label>
+        <label><input type="radio" name="result" value="loss" /> Loss</label>
+        <label><input type="radio" name="result" value="unknown" checked /> Unknown</label>
+      </div>
+      <div class="form-actions">
+        <button id="btn-save-confirm" class="btn primary">Save</button>
+        <button id="btn-save-cancel" class="btn ghost">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Status message toast -->
+    <div id="toast" class="hidden banner"></div>
+  </div>
+
+  <script type="module" src="popup.ts"></script>
+</body>
+</html>
