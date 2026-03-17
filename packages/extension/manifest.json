@@ -8,7 +8,8 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "activeTab", "tabs"],
+  "permissions": ["storage", "activeTab", "tabs", "scripting"],
+  "host_permissions": ["https://tcg-arena.fr/*"],
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_title": "Riftbound Recorder",

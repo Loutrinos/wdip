@@ -126,6 +126,27 @@ async function onReset(tabId: number): Promise<void> {
   }
 }
 
+// ─── Content script injection ─────────────────────────────────────────────────
+
+/**
+ * Tries to inject the content script into an already-open tab.
+ * Required when the extension is installed/reloaded after the tab was opened,
+ * because Chrome doesn't retroactively inject content scripts into existing tabs.
+ */
+async function ensureContentScript(tabId: number): Promise<boolean> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['src/content-game.js'],
+    })
+    // Give the script a moment to register its message listener
+    await new Promise(r => setTimeout(r, 300))
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init(): Promise<void> {
@@ -136,9 +157,7 @@ async function init(): Promise<void> {
     return
   }
 
-  // tab.url requires "tabs" permission; if undefined (old build) fall through to
-  // the content-script ping below which handles it gracefully.
-  const urlOk = tab.url === undefined || tab.url.includes('tcg-arena.fr')
+  const urlOk = !tab.url || tab.url.includes('tcg-arena.fr')
   if (!urlOk) {
     showWrongPage()
     return
@@ -146,14 +165,20 @@ async function init(): Promise<void> {
 
   const tabId = tab.id
 
-  // Ping the content script — if it doesn't respond it either hasn't loaded yet
-  // or there was an error. Show an actionable message rather than silent failure.
-  const ping = await sendToContent(tabId, { type: 'GET_STATUS' })
+  // First ping — content script may already be running
+  let ping = await sendToContent(tabId, { type: 'GET_STATUS' })
+
+  // If no response, the content script wasn't injected (tab was open before
+  // the extension loaded). Inject it now and retry once.
+  if (!ping) {
+    await ensureContentScript(tabId)
+    ping = await sendToContent(tabId, { type: 'GET_STATUS' })
+  }
+
   if (!ping) {
     wrongPage.innerHTML =
       'Could not connect to the game page.<br>' +
-      '<strong>Try:</strong> reload tcg-arena.fr then reopen this popup.<br>' +
-      '<small>Make sure you\'re inside an active game room.</small>'
+      '<strong>Try:</strong> make sure you are inside an active Riftbound game room, then reopen this popup.'
     showWrongPage()
     return
   }
