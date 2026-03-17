@@ -16,7 +16,8 @@ export default defineConfig({
         // The built JS is already IIFE so it works fine as a classic script.
         return html
           .replace(/ crossorigin(="[^"]*")?/g, '')
-          .replace(/<script type="module"/g, '<script')
+          .replace(/<script type="module"/g, '<script defer')
+          .replace(/<script src=/g, '<script defer src=')
       },
     },
     webExtension({
