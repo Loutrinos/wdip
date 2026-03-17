@@ -48,25 +48,6 @@
     </section>
   </div>
 
-  <!-- Non-module script: catches ALL errors including module crashes -->
-  <script>
-    var diag = document.getElementById('diag');
-    function log(msg) {
-      diag.textContent += '\n' + msg;
-      console.log('[popup]', msg);
-    }
-    window.onerror = function(msg, src, line, col, err) {
-      diag.style.color = '#e03b3b';
-      log('JS ERROR: ' + msg + ' (' + src + ':' + line + ')');
-      if (err && err.stack) log(err.stack);
-    };
-    window.addEventListener('unhandledrejection', function(e) {
-      diag.style.color = '#e03b3b';
-      log('UNHANDLED PROMISE: ' + e.reason);
-    });
-    log('HTML loaded, extension id: ' + (chrome && chrome.runtime && chrome.runtime.id || 'none'));
-  </script>
-
   <script type="module" src="popup.ts"></script>
 </body>
 </html>
