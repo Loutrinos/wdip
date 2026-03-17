@@ -11,7 +11,12 @@ export default defineConfig({
     {
       name: 'remove-crossorigin',
       transformIndexHtml(html: string) {
-        return html.replace(/ crossorigin(="[^"]*")?/g, '')
+        // Remove crossorigin and type="module" from <script> tags.
+        // Chrome extension popup pages can't load module scripts (MIME check fails).
+        // The built JS is already IIFE so it works fine as a classic script.
+        return html
+          .replace(/ crossorigin(="[^"]*")?/g, '')
+          .replace(/<script type="module"/g, '<script')
       },
     },
     webExtension({
