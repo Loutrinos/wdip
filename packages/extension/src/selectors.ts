@@ -1,121 +1,97 @@
-import type { Card } from '@wdip/shared'
+﻿import type { Card } from '@wdip/shared'
 
-// ─── DOM Selectors for tcg-arena.fr ──────────────────────────────────────────
-//
-// These selectors were derived from XPaths provided during in-game inspection.
-// If the site structure changes, update these constants — no other code needs
-// to change because all DOM reads go through the helpers below.
-//
-// XPath → CSS derivation:
-//   //*[@id="X"]/a/b[N] → #X > a > b:nth-child(N)
+// Verified selectors against actual /play page DOM (March 2026).
+// Cards are absolutely positioned; zone is encoded in the card's class list.
+// History log is the primary data source for game events.
 
 export const SELECTORS = {
-  // Turn number indicator
-  // XPath: //*[@id="root"]/div/header/div/div/div[1]/div[1]/p
-  turnNumber:
-    '#root > div > header > div > div > div:nth-child(1) > div:nth-child(1) > p',
+  // Scrollable history/chat container
+  historyContent: '.history .content',
 
-  // Chat container — used to extract HP changes and active player
-  // XPath: //*[@id="root"]/div/header/div/div/div[2]/div[3]
-  chat:
-    '#root > div > header > div > div > div:nth-child(2) > div:nth-child(3)',
+  // Turn number text: "Turn 1" in the left sidebar
+  turnNumber: '.left-bar p.text-nowrap',
 
-  // My board container
-  // XPath: //*[@id="root"]/div/header/div/div/div[2]/div[2]/div[2]/div[1]/div
-  myBoardContainer:
-    '#root > div > header > div > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div',
+  // Flash element shown when the turn changes: "Loutrinos's turn"
+  newTurnMessage: '.new-turn-message p',
 
-  // Opponent board — assumed mirror (div[2] sibling). Confirm via DevTools.
-  opponentBoardContainer:
-    '#root > div > header > div > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(2) > div:nth-child(2) > div',
+  // Current player's display name (shown in the counter widget)
+  myPlayerName: '.player-counters-wrapper .pseudo',
 
-  // Relative selectors applied within a board container
-  // XPath relative: /div[1]/div[1]/div[1] → zone label elements
-  boardZones: ':scope > div:nth-child(1) > div:nth-child(1) > div:nth-child(1)',
-  // XPath relative: /div[1]/div[1]/div[2] → card elements
-  boardCards: ':scope > div:nth-child(1) > div:nth-child(1) > div:nth-child(2)',
+  // All card elements -- zone is the second class name (e.g. "Mana", "Hand")
+  allCards: 'div.game-card',
 } as const
 
-// ─── Chat Regex Patterns ──────────────────────────────────────────────────────
-//
-// These patterns match system messages posted to chat by tcg-arena.fr.
-// They are intentionally broad and cover both French and English UI strings.
-// Update them once you observe the actual message format in a live game.
-//
-// Tip: open Chrome DevTools > Extensions > content-game.ts console and run:
-//   Array.from(document.querySelector(SELECTORS.chat).querySelectorAll('*'))
-//     .filter(e => !e.children.length && e.textContent.trim())
-//     .map(e => e.textContent.trim())
+// History Log Regex Patterns
+// Matched against text in .history .content child divs.
+// Observed examples:
+//   "Loutrinos starting turn 1"           (full-width system message)
+//   "drew 2"                              (player action p.text-start)
+//   "played Ferrous Forerunner from hand" (player action)
+//   "counter 1 increased by 2 to 2"      (counter update)
 
 export const CHAT_PATTERNS = {
-  // Match turn number: "Turn 3", "Tour 3", "Round 3"
-  turnNumber: /(?:turn|tour|round)[:\s]+(\d+)/i,
+  // "Loutrinos starting turn 1"
+  turnStart: /^(.+?)\s+starting\s+turn\s+(\d+)$/i,
 
-  // Match active player: "It's Alice's turn" / "C'est le tour de Alice"
-  activePlayer: /(?:it'?s?|c'est\s+(?:le\s+tour\s+de)?)\s+(.+?)(?:'s)?\s+(?:turn|tour)/i,
+  // Turn number from sidebar: "Turn 1"
+  turnNumber: /Turn\s+(\d+)/i,
 
-  // Match a counter/HP change: "Health: 18", "HP: 20", "Life: 15", "Points: 12"
-  // Also matches French variants: "Vie: 18", "PV: 20"
-  hpValue: /(?:hp|health|life|points?|vie|pv)[:\s]+(\d+)/i,
+  // "counter 1 increased by 2 to 2"
+  counterChange: /counter\s+\d+\s+(?:increased|decreased)\s+by\s+\d+\s+to\s+(\d+)/i,
 
-  // Match a numeric value set/changed: "Counter set to 18", "Compteur: 18 → 15"
-  counterSet: /\b(\d+)\s*(?:→|->|to|=)\s*(\d+)/,
+  // "drew 2"
+  drew: /^drew\s+(\d+)$/i,
 } as const
 
-// ─── DOM Helpers ──────────────────────────────────────────────────────────────
+// DOM Helpers
+
+// Classes to skip when finding the zone class on a game-card div
+const IGNORED_CLASSES = new Set([
+  'game-card', 'card-hidden-no', 'card-hidden-yes', 'extra-deck',
+  'card-horizontal', 'tapped',
+])
 
 /**
- * Reads a Card from a single card DOM element.
- * Tries multiple common patterns used by tcg-arena.fr card renderers.
+ * Reads a Card from a game-card div.
+ * Zone comes from the second class; card ID from the front image URL.
  */
 export function readCardFromElement(el: Element): Card {
-  const img = el.querySelector('img')
+  const img = el.querySelector('img.card-front')
+  const src = img?.getAttribute('src') ?? ''
+  // e.g. https://cdn.rgpub.io/.../cards/OGN-249/full-desktop-2x.avif
+  const idMatch = src.match(/\/cards\/([^/]+)\//)
+  const cardId = idMatch?.[1] ?? ''
 
-  // Prefer explicit title/alt on the image, then visible text, then data attrs
-  const name = (
-    img?.getAttribute('title') ||
-    img?.getAttribute('alt') ||
-    el.getAttribute('data-name') ||
-    el.getAttribute('title') ||
-    el.querySelector('[class*="name" i], [class*="title" i], p, span')?.textContent ||
-    'Unknown'
-  ).trim()
+  const zone =
+    Array.from(el.classList).find(
+      c => !IGNORED_CLASSES.has(c) && !/^(index|reversed-index)-\d+$/.test(c),
+    ) ?? 'unknown'
 
   return {
-    name,
-    imageUrl: img?.src,
-    zone: el.closest('[data-zone]')?.getAttribute('data-zone') ?? undefined,
+    name: cardId || 'unknown',
+    id: cardId || undefined,
+    imageUrl: src || undefined,
+    zone,
   }
 }
 
 /**
- * Reads all card elements inside a board-container element.
+ * Returns all visible (non-extra-deck) cards that have a revealed front face.
  */
-export function readCardsFromBoard(boardContainer: Element): Card[] {
-  const cardsWrapper = boardContainer.querySelector(SELECTORS.boardCards)
-  if (!cardsWrapper) return []
-  return Array.from(cardsWrapper.children).map(readCardFromElement)
-}
-
-/**
- * Returns zone names from the zone-labels element inside a board container.
- */
-export function readZoneNames(boardContainer: Element): string[] {
-  const zonesEl = boardContainer.querySelector(SELECTORS.boardZones)
-  if (!zonesEl) return []
-  return Array.from(zonesEl.children)
-    .map(el => el.textContent?.trim() ?? '')
-    .filter(Boolean)
+export function readAllBoardCards(): Card[] {
+  return Array.from(document.querySelectorAll(SELECTORS.allCards))
+    .filter(el => !el.classList.contains('extra-deck'))
+    .filter(el => el.querySelector('img.card-front') !== null)
+    .map(readCardFromElement)
 }
 
 /**
  * Groups an array of cards into Record<zoneName, Card[]>.
- * Falls back to 'battlefield' if a card has no zone.
  */
 export function groupByZone(cards: Card[]): Record<string, Card[]> {
   const out: Record<string, Card[]> = {}
   for (const card of cards) {
-    const zone = card.zone ?? 'battlefield'
+    const zone = card.zone ?? 'unknown'
     ;(out[zone] ??= []).push(card)
   }
   return out
@@ -123,7 +99,6 @@ export function groupByZone(cards: Card[]): Record<string, Card[]> {
 
 /**
  * Polls for a selector to appear in the DOM (SPA-safe).
- * Resolves with the element or null after timeout.
  */
 export async function waitForSelector(
   selector: string,
