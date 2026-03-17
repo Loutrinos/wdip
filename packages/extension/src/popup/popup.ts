@@ -76,16 +76,6 @@ function hideEndForm(): void {
   actionsSection.classList.remove('hidden')
 }
 
-// ─── Status polling ───────────────────────────────────────────────────────────
-
-async function refreshStatus(tabId: number): Promise<void> {
-  const res = await sendToContent(tabId, { type: 'GET_STATUS' })
-  if (res?.type === 'STATUS') {
-    turnNumber.textContent = String(res.currentTurnNumber)
-    turnCount.textContent = String(res.turnCount)
-  }
-}
-
 // ─── Button handlers ──────────────────────────────────────────────────────────
 
 async function onCapture(tabId: number): Promise<void> {
@@ -141,14 +131,39 @@ async function onReset(tabId: number): Promise<void> {
 async function init(): Promise<void> {
   const tab = await getActiveTab()
 
-  if (!tab?.id || !tab.url?.includes('tcg-arena.fr')) {
+  if (!tab?.id) {
+    showWrongPage()
+    return
+  }
+
+  // tab.url requires "tabs" permission; if undefined (old build) fall through to
+  // the content-script ping below which handles it gracefully.
+  const urlOk = tab.url === undefined || tab.url.includes('tcg-arena.fr')
+  if (!urlOk) {
     showWrongPage()
     return
   }
 
   const tabId = tab.id
+
+  // Ping the content script — if it doesn't respond it either hasn't loaded yet
+  // or there was an error. Show an actionable message rather than silent failure.
+  const ping = await sendToContent(tabId, { type: 'GET_STATUS' })
+  if (!ping) {
+    wrongPage.innerHTML =
+      'Could not connect to the game page.<br>' +
+      '<strong>Try:</strong> reload tcg-arena.fr then reopen this popup.<br>' +
+      '<small>Make sure you\'re inside an active game room.</small>'
+    showWrongPage()
+    return
+  }
+
   showActions()
-  await refreshStatus(tabId)
+
+  if (ping.type === 'STATUS') {
+    turnNumber.textContent = String(ping.currentTurnNumber)
+    turnCount.textContent = String(ping.turnCount)
+  }
 
   btnCapture.addEventListener('click', () => onCapture(tabId))
   btnEnd.addEventListener('click', showEndForm)

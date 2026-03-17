@@ -10,7 +10,8 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const ICONS_DIR = resolve(__dirname, '../icons')
+// Icons must live in public/ so Vite copies them into dist/
+const ICONS_DIR = resolve(__dirname, '../public/icons')
 
 // Build CRC-32 lookup table (required for PNG chunk checksums)
 const CRC_TABLE = (() => {
