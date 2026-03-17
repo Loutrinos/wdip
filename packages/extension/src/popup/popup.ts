@@ -4,7 +4,7 @@
  * Communicates with content-game.ts via chrome.tabs.sendMessage.
  */
 
-import type { ExtensionRequest, ExtensionResponse } from '@wdip/shared'
+import type { DebugScanResult, ExtensionRequest, ExtensionResponse } from '@wdip/shared'
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,8 @@ const btnReset = document.getElementById('btn-reset') as HTMLButtonElement
 const btnSaveConfirm = document.getElementById('btn-save-confirm') as HTMLButtonElement
 const btnSaveCancel = document.getElementById('btn-save-cancel') as HTMLButtonElement
 const inputOpponent = document.getElementById('input-opponent') as HTMLInputElement
+const btnDebug = document.getElementById('btn-debug') as HTMLButtonElement
+const debugOutput = document.getElementById('debug-output') as HTMLDivElement
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,55 @@ async function onReset(tabId: number): Promise<void> {
   }
 }
 
+// ─── Debug panel ──────────────────────────────────────────────────────────────
+
+function renderDebug(scan: DebugScanResult): void {
+  const lines: string[] = []
+
+  lines.push(`<span class="head">📍 URL</span>`)
+  lines.push(`<span class="dim">${scan.url}</span>\n`)
+
+  lines.push(`<span class="head">🎯 Selectors</span>`)
+  for (const r of scan.results) {
+    const icon = r.found ? `<span class="ok">✓</span>` : `<span class="fail">✗</span>`
+    const label = r.selector.split(':')[0]
+    const text = r.found
+      ? ` children=${r.childCount} text="${r.text?.slice(0, 50) ?? ''}"`
+      : ''
+    lines.push(`${icon} <b>${label}</b>${text}`)
+  }
+
+  lines.push(`\n<span class="head">💬 Chat (last lines)</span>`)
+  if (scan.chatRecentLines.length === 0) {
+    lines.push(`<span class="fail">No chat lines found</span>`)
+  } else {
+    for (const l of scan.chatRecentLines) {
+      lines.push(`<span class="dim">${l}</span>`)
+    }
+  }
+
+  lines.push(`\n<span class="head">📊 Live State</span>`)
+  lines.push(`HP me=${scan.liveState.lifePoints.me} opp=${scan.liveState.lifePoints.opponent}`)
+  lines.push(`Active player: ${scan.liveState.activePlayer}`)
+
+  debugOutput.innerHTML = lines.join('\n')
+  debugOutput.classList.remove('hidden')
+}
+
+async function onDebugScan(tabId: number): Promise<void> {
+  btnDebug.textContent = '⏳ Scanning…'
+  btnDebug.disabled = true
+  const res = await sendToContent(tabId, { type: 'DEBUG_SCAN' })
+  btnDebug.textContent = '🔍 Debug: Scan DOM'
+  btnDebug.disabled = false
+  if (res?.type === 'DEBUG_SCAN_RESULT') {
+    renderDebug(res.scan)
+  } else {
+    debugOutput.innerHTML = `<span class="fail">Scan failed — content script not responding</span>`
+    debugOutput.classList.remove('hidden')
+  }
+}
+
 // ─── Content script injection ─────────────────────────────────────────────────
 
 /**
@@ -180,6 +231,8 @@ async function init(): Promise<void> {
       'Could not connect to the game page.<br>' +
       '<strong>Try:</strong> make sure you are inside an active Riftbound game room, then reopen this popup.'
     showWrongPage()
+    // Still wire debug scan so the user can see what's happening
+    btnDebug.addEventListener('click', () => onDebugScan(tabId))
     return
   }
 
@@ -195,6 +248,7 @@ async function init(): Promise<void> {
   btnReset.addEventListener('click', () => onReset(tabId))
   btnSaveConfirm.addEventListener('click', () => onSaveConfirm(tabId))
   btnSaveCancel.addEventListener('click', hideEndForm)
+  btnDebug.addEventListener('click', () => onDebugScan(tabId))
 }
 
 init()

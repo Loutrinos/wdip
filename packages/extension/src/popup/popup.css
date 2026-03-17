@@ -168,4 +168,28 @@ input[type="text"]:focus {
 .banner.success { background: rgba(59, 224, 91, 0.15); color: var(--success); border: 1px solid var(--success); }
 .banner.error { background: rgba(224, 59, 59, 0.15); color: var(--danger); border: 1px solid var(--danger); }
 
-.hidden { display: none !important; }
+/* Debug panel */
+#debug-section {
+  padding: 8px 12px 12px;
+}
+
+#debug-output {
+  margin-top: 8px;
+  background: #0a0a14;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  max-height: 320px;
+  overflow-y: auto;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+#debug-output .ok   { color: #3be05b; }
+#debug-output .fail { color: #e03b3b; }
+#debug-output .dim  { color: #555577; }
+#debug-output .head { color: #9988ff; font-weight: bold; }

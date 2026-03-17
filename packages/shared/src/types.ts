@@ -71,15 +71,32 @@ export type BridgeResponse =
 
 // ─── Extension Internal Messages (popup ↔ content-game.ts) ───────────────────
 
+export interface SelectorScanResult {
+  selector: string
+  found: boolean
+  text?: string
+  childCount?: number
+  outerHTMLSnippet?: string
+}
+
+export interface DebugScanResult {
+  url: string
+  results: SelectorScanResult[]
+  liveState: { lifePoints: { me: number; opponent: number }; activePlayer: string }
+  chatRecentLines: string[]
+}
+
 export type ExtensionRequest =
   | { type: 'GET_STATUS' }
   | { type: 'CAPTURE_TURN' }
   | { type: 'END_GAME'; opponent: string; result: GameRecord['result']; myDeck: Card[] }
   | { type: 'RESET_SESSION' }
+  | { type: 'DEBUG_SCAN' }
 
 export type ExtensionResponse =
   | { type: 'STATUS'; turnCount: number; currentTurnNumber: number; sessionId: string }
   | { type: 'TURN_CAPTURED'; turnNumber: number; turnCount: number }
   | { type: 'GAME_SAVED'; gameId: string }
   | { type: 'SESSION_RESET' }
+  | { type: 'DEBUG_SCAN_RESULT'; scan: DebugScanResult }
   | { type: 'ERROR'; message: string }

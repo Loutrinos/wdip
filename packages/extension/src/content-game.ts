@@ -10,7 +10,7 @@
  *  5. On END_GAME: builds final GameRecord → saves to chrome.storage.local.
  */
 
-import type { BoardState, Card, ExtensionRequest, ExtensionResponse, GameRecord, GameSession, Turn } from '@wdip/shared'
+import type { BoardState, Card, DebugScanResult, ExtensionRequest, ExtensionResponse, GameRecord, GameSession, Turn } from '@wdip/shared'
 import {
   CHAT_PATTERNS,
   SELECTORS,
@@ -194,6 +194,36 @@ chrome.runtime.onMessage.addListener(
         liveState.lifePoints = { me: 20, opponent: 20 }
         liveState.activePlayer = 'unknown'
         sendResponse({ type: 'SESSION_RESET' })
+        break
+      }
+
+      case 'DEBUG_SCAN': {
+        const scan: DebugScanResult = {
+          url: window.location.href,
+          liveState: {
+            lifePoints: { ...liveState.lifePoints },
+            activePlayer: liveState.activePlayer,
+          },
+          chatRecentLines: (() => {
+            const chat = document.querySelector(SELECTORS.chat)
+            if (!chat) return []
+            return Array.from(chat.querySelectorAll('*'))
+              .filter(el => el.children.length === 0 && (el.textContent?.trim().length ?? 0) > 0)
+              .slice(-15)
+              .map(el => el.textContent!.trim())
+          })(),
+          results: Object.entries(SELECTORS).map(([key, selector]) => {
+            const el = document.querySelector(selector)
+            return {
+              selector: `${key}: ${selector}`,
+              found: !!el,
+              text: el?.textContent?.trim().slice(0, 80),
+              childCount: el?.children.length,
+              outerHTMLSnippet: el?.outerHTML.slice(0, 120),
+            }
+          }),
+        }
+        sendResponse({ type: 'DEBUG_SCAN_RESULT', scan })
         break
       }
     }
