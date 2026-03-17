@@ -1,254 +1,225 @@
-/**
- * popup.ts
- * Runs as a module script in the popup page context.
- * Communicates with content-game.ts via chrome.tabs.sendMessage.
- */
+﻿import type { DebugScanResult, ExtensionRequest, ExtensionResponse } from '@wdip/shared'
 
-import type { DebugScanResult, ExtensionRequest, ExtensionResponse } from '@wdip/shared'
+// ─── DOM refs ────────────────────────────────────────────────────────────────
 
-// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const elTurnNumber  = document.getElementById('turn-number')!
+const elTurnCount   = document.getElementById('turn-count')!
+const elWrongPage   = document.getElementById('wrong-page')!
+const elActions     = document.getElementById('actions-section')!
+const elEndForm     = document.getElementById('end-form')!
+const elToast       = document.getElementById('toast')!
+const elDebugOut    = document.getElementById('debug-output') as HTMLDivElement
+const elStatus      = document.getElementById('init-status')!
 
-const turnNumber = document.getElementById('turn-number')!
-const turnCount = document.getElementById('turn-count')!
-const wrongPage = document.getElementById('wrong-page')!
-const actionsSection = document.getElementById('actions-section')!
-const endForm = document.getElementById('end-form')!
-const toast = document.getElementById('toast')!
-
-const btnCapture = document.getElementById('btn-capture') as HTMLButtonElement
-const btnEnd = document.getElementById('btn-end') as HTMLButtonElement
-const btnReset = document.getElementById('btn-reset') as HTMLButtonElement
-const btnSaveConfirm = document.getElementById('btn-save-confirm') as HTMLButtonElement
+const btnCapture    = document.getElementById('btn-capture')     as HTMLButtonElement
+const btnEnd        = document.getElementById('btn-end')         as HTMLButtonElement
+const btnReset      = document.getElementById('btn-reset')       as HTMLButtonElement
+const btnSaveOk     = document.getElementById('btn-save-confirm') as HTMLButtonElement
 const btnSaveCancel = document.getElementById('btn-save-cancel') as HTMLButtonElement
-const inputOpponent = document.getElementById('input-opponent') as HTMLInputElement
-const btnDebug = document.getElementById('btn-debug') as HTMLButtonElement
-const debugOutput = document.getElementById('debug-output') as HTMLDivElement
+const btnDebug      = document.getElementById('btn-debug')       as HTMLButtonElement
+const inputOpponent = document.getElementById('input-opponent')  as HTMLInputElement
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Module-level tab id (set during init) ────────────────────────────────────
 
-async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  return tab ?? null
-}
+let activeTabId: number | null = null
 
-async function sendToContent(
-  tabId: number,
-  msg: ExtensionRequest,
-): Promise<ExtensionResponse | null> {
+// ─── Communication ───────────────────────────────────────────────────────────
+
+async function send(msg: ExtensionRequest): Promise<ExtensionResponse | null> {
+  const tabId = activeTabId ?? await freshTabId()
+  if (!tabId) { showStatus('No active tab found'); return null }
   try {
     return await chrome.tabs.sendMessage<ExtensionRequest, ExtensionResponse>(tabId, msg)
-  } catch {
+  } catch (e) {
+    showStatus('Content script not reachable: ' + String(e))
     return null
   }
 }
 
+async function freshTabId(): Promise<number | null> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  return tab?.id ?? null
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
 let toastTimer: ReturnType<typeof setTimeout> | null = null
-
 function showToast(text: string, type: 'success' | 'error' | 'warning' = 'success') {
-  toast.textContent = text
-  toast.className = `banner ${type}`
+  elToast.textContent = text
+  elToast.className = `banner ${type}`
   if (toastTimer) clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => toast.classList.add('hidden'), 3000)
+  toastTimer = setTimeout(() => elToast.classList.add('hidden'), 4000)
 }
 
-function setLoading(btn: HTMLButtonElement, loading: boolean) {
-  btn.disabled = loading
+function showStatus(msg: string) {
+  elStatus.textContent = msg
+  elStatus.classList.remove('hidden')
 }
 
-// ─── UI state ─────────────────────────────────────────────────────────────────
+// ─── UI helpers ───────────────────────────────────────────────────────────────
 
-function showActions(): void {
-  wrongPage.classList.add('hidden')
-  actionsSection.classList.remove('hidden')
+function showActions() {
+  elWrongPage.classList.add('hidden')
+  elActions.classList.remove('hidden')
+  elStatus.classList.add('hidden')
 }
 
-function showWrongPage(): void {
-  actionsSection.classList.add('hidden')
-  wrongPage.classList.remove('hidden')
+function showWrongPage(msg?: string) {
+  elActions.classList.add('hidden')
+  elWrongPage.classList.remove('hidden')
+  if (msg) elWrongPage.innerHTML = msg
 }
 
-function showEndForm(): void {
-  actionsSection.classList.add('hidden')
-  endForm.classList.remove('hidden')
+function showEndForm() {
+  elActions.classList.add('hidden')
+  elEndForm.classList.remove('hidden')
   inputOpponent.focus()
 }
 
-function hideEndForm(): void {
-  endForm.classList.add('hidden')
-  actionsSection.classList.remove('hidden')
+function hideEndForm() {
+  elEndForm.classList.add('hidden')
+  elActions.classList.remove('hidden')
 }
 
-// ─── Button handlers ──────────────────────────────────────────────────────────
+// ─── Handlers ────────────────────────────────────────────────────────────────
 
-async function onCapture(tabId: number): Promise<void> {
-  setLoading(btnCapture, true)
-  const res = await sendToContent(tabId, { type: 'CAPTURE_TURN' })
-  setLoading(btnCapture, false)
+async function onCapture() {
+  btnCapture.disabled = true
+  const res = await send({ type: 'CAPTURE_TURN' })
+  btnCapture.disabled = false
   if (res?.type === 'TURN_CAPTURED') {
-    turnCount.textContent = String(res.turnCount)
-    showToast(`Turn ${res.turnNumber} captured ✓`)
+    elTurnCount.textContent = String(res.turnCount)
+    showToast(`Turn ${res.turnNumber} captured`)
   } else {
-    showToast('Capture failed — check DevTools', 'error')
+    showToast('Capture failed — is content script running?', 'error')
   }
 }
 
-async function onSaveConfirm(tabId: number): Promise<void> {
+async function onSaveConfirm() {
   const opponent = inputOpponent.value.trim() || 'Unknown'
-  const resultInput = document.querySelector<HTMLInputElement>('input[name="result"]:checked')
-  const result = (resultInput?.value ?? 'unknown') as 'win' | 'loss' | 'unknown'
-
-  setLoading(btnSaveConfirm, true)
-  const res = await sendToContent(tabId, {
-    type: 'END_GAME',
-    opponent,
-    result,
-    myDeck: [],
-  })
-  setLoading(btnSaveConfirm, false)
-
+  const resultEl = document.querySelector<HTMLInputElement>('input[name="result"]:checked')
+  const result = (resultEl?.value ?? 'unknown') as 'win' | 'loss' | 'unknown'
+  btnSaveOk.disabled = true
+  const res = await send({ type: 'END_GAME', opponent, result, myDeck: [] })
+  btnSaveOk.disabled = false
   if (res?.type === 'GAME_SAVED') {
     hideEndForm()
-    turnCount.textContent = '0'
-    turnNumber.textContent = '—'
+    elTurnCount.textContent = '0'
+    elTurnNumber.textContent = '—'
     inputOpponent.value = ''
-    showToast('Game saved! Open the web app to review.', 'success')
-  } else if (res?.type === 'ERROR') {
-    showToast(`Error: ${res.message}`, 'error')
+    showToast('Game saved!')
   } else {
     showToast('Save failed — check DevTools', 'error')
   }
 }
 
-async function onReset(tabId: number): Promise<void> {
-  const res = await sendToContent(tabId, { type: 'RESET_SESSION' })
+async function onReset() {
+  const res = await send({ type: 'RESET_SESSION' })
   if (res?.type === 'SESSION_RESET') {
-    turnCount.textContent = '0'
-    turnNumber.textContent = '—'
+    elTurnCount.textContent = '0'
+    elTurnNumber.textContent = '—'
     showToast('Session reset', 'warning')
   }
 }
 
 // ─── Debug panel ──────────────────────────────────────────────────────────────
 
-function renderDebug(scan: DebugScanResult): void {
-  const lines: string[] = []
-
-  lines.push(`<span class="head">📍 URL</span>`)
-  lines.push(`<span class="dim">${scan.url}</span>\n`)
-
-  lines.push(`<span class="head">🎯 Selectors</span>`)
+function renderDebug(scan: DebugScanResult) {
+  const lines: string[] = [`<b>URL:</b> ${scan.url}`, '']
+  lines.push('<b>Selectors:</b>')
   for (const r of scan.results) {
-    const icon = r.found ? `<span class="ok">✓</span>` : `<span class="fail">✗</span>`
-    const label = r.selector.split(':')[0]
-    const text = r.found
-      ? ` children=${r.childCount} text="${r.text?.slice(0, 50) ?? ''}"`
-      : ''
-    lines.push(`${icon} <b>${label}</b>${text}`)
+    const ok = r.found ? '<span class="ok">✓</span>' : '<span class="fail">✗</span>'
+    const key = r.selector.split(':')[0]
+    const detail = r.found ? ` (${r.childCount} children) "${r.text?.slice(0, 60) ?? ''}"` : ''
+    lines.push(`${ok} ${key}${detail}`)
   }
-
-  lines.push(`\n<span class="head">💬 Chat (last lines)</span>`)
+  lines.push('')
+  lines.push('<b>History log (last lines):</b>')
   if (scan.chatRecentLines.length === 0) {
-    lines.push(`<span class="fail">No chat lines found</span>`)
+    lines.push('<span class="fail">empty</span>')
   } else {
-    for (const l of scan.chatRecentLines) {
-      lines.push(`<span class="dim">${l}</span>`)
-    }
+    scan.chatRecentLines.forEach(l => lines.push(`<span class="dim">${l}</span>`))
   }
-
-  lines.push(`\n<span class="head">📊 Live State</span>`)
-  lines.push(`HP me=${scan.liveState.lifePoints.me} opp=${scan.liveState.lifePoints.opponent}`)
-  lines.push(`Active player: ${scan.liveState.activePlayer}`)
-
-  debugOutput.innerHTML = lines.join('\n')
-  debugOutput.classList.remove('hidden')
+  lines.push('')
+  lines.push(`<b>Live state:</b> hp me=${scan.liveState.lifePoints.me} opp=${scan.liveState.lifePoints.opponent} active=${scan.liveState.activePlayer}`)
+  elDebugOut.innerHTML = lines.join('\n')
+  elDebugOut.classList.remove('hidden')
 }
 
-async function onDebugScan(tabId: number): Promise<void> {
+async function onDebugScan() {
   btnDebug.textContent = '⏳ Scanning…'
   btnDebug.disabled = true
-  const res = await sendToContent(tabId, { type: 'DEBUG_SCAN' })
-  btnDebug.textContent = '🔍 Debug: Scan DOM'
+  const res = await send({ type: 'DEBUG_SCAN' })
+  btnDebug.textContent = '🔍 Scan DOM'
   btnDebug.disabled = false
   if (res?.type === 'DEBUG_SCAN_RESULT') {
     renderDebug(res.scan)
   } else {
-    debugOutput.innerHTML = `<span class="fail">Scan failed — content script not responding</span>`
-    debugOutput.classList.remove('hidden')
+    elDebugOut.innerHTML = `<span class="fail">No response from content script.<br>Try: reload the tcg-arena.fr tab, then reopen this popup.</span>`
+    elDebugOut.classList.remove('hidden')
   }
 }
 
-// ─── Content script injection ─────────────────────────────────────────────────
+// ─── Wire buttons immediately (before any async code) ────────────────────────
+// This ensures clicks always work even if init() throws.
 
-/**
- * Tries to inject the content script into an already-open tab.
- * Required when the extension is installed/reloaded after the tab was opened,
- * because Chrome doesn't retroactively inject content scripts into existing tabs.
- */
-async function ensureContentScript(tabId: number): Promise<boolean> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['src/content-game.js'],
-    })
-    // Give the script a moment to register its message listener
-    await new Promise(r => setTimeout(r, 300))
-    return true
-  } catch {
-    return false
-  }
-}
+btnCapture.addEventListener('click', onCapture)
+btnEnd.addEventListener('click', showEndForm)
+btnReset.addEventListener('click', onReset)
+btnSaveOk.addEventListener('click', onSaveConfirm)
+btnSaveCancel.addEventListener('click', hideEndForm)
+btnDebug.addEventListener('click', onDebugScan)
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+// ─── Init ────────────────────────────────────────────────────────────────────
 
-async function init(): Promise<void> {
-  const tab = await getActiveTab()
-
+async function init() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tab?.id) {
-    showWrongPage()
+    showWrongPage('Could not get active tab.')
     return
   }
 
-  const urlOk = !tab.url || tab.url.includes('tcg-arena.fr')
-  if (!urlOk) {
-    showWrongPage()
+  activeTabId = tab.id
+
+  if (tab.url && !tab.url.includes('tcg-arena.fr')) {
+    showWrongPage(`Not a tcg-arena.fr tab.<br><small>${tab.url}</small>`)
     return
   }
 
-  const tabId = tab.id
+  // Ping — content script may already be running
+  let ping = await send({ type: 'GET_STATUS' })
 
-  // First ping — content script may already be running
-  let ping = await sendToContent(tabId, { type: 'GET_STATUS' })
-
-  // If no response, the content script wasn't injected (tab was open before
-  // the extension loaded). Inject it now and retry once.
   if (!ping) {
-    await ensureContentScript(tabId)
-    ping = await sendToContent(tabId, { type: 'GET_STATUS' })
+    // Try to inject content script (needed when tab was open before extension loaded)
+    showStatus('Injecting content script…')
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content-game.js'] })
+      await new Promise(r => setTimeout(r, 500))
+    } catch (e) {
+      showStatus('Injection failed: ' + String(e))
+    }
+    ping = await send({ type: 'GET_STATUS' })
   }
 
   if (!ping) {
-    wrongPage.innerHTML =
+    showWrongPage(
       'Could not connect to the game page.<br>' +
-      '<strong>Try:</strong> make sure you are inside an active Riftbound game room, then reopen this popup.'
-    showWrongPage()
-    // Still wire debug scan so the user can see what's happening
-    btnDebug.addEventListener('click', () => onDebugScan(tabId))
+      'Make sure you are inside an active game room.<br>' +
+      '<b>Click "🔍 Scan DOM" below to diagnose.</b>'
+    )
     return
   }
 
   showActions()
-
   if (ping.type === 'STATUS') {
-    turnNumber.textContent = String(ping.currentTurnNumber)
-    turnCount.textContent = String(ping.turnCount)
+    elTurnNumber.textContent = String(ping.currentTurnNumber)
+    elTurnCount.textContent  = String(ping.turnCount)
   }
-
-  btnCapture.addEventListener('click', () => onCapture(tabId))
-  btnEnd.addEventListener('click', showEndForm)
-  btnReset.addEventListener('click', () => onReset(tabId))
-  btnSaveConfirm.addEventListener('click', () => onSaveConfirm(tabId))
-  btnSaveCancel.addEventListener('click', hideEndForm)
-  btnDebug.addEventListener('click', () => onDebugScan(tabId))
 }
 
-init()
+// Visible error catch
+window.addEventListener('unhandledrejection', e => {
+  showStatus('Error: ' + String(e.reason))
+})
+
+init().catch(e => showStatus('Init failed: ' + String(e)))
