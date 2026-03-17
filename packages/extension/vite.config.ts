@@ -6,6 +6,14 @@ export default defineConfig({
   // public/ is copied as-is to dist/ — icons live here so Chrome finds them
   publicDir: path.resolve(__dirname, 'public'),
   plugins: [
+    // Remove `crossorigin` attributes Vite adds to <script>/<link> tags —
+    // they can cause module-load failures in Chrome extension popup pages.
+    {
+      name: 'remove-crossorigin',
+      transformIndexHtml(html: string) {
+        return html.replace(/ crossorigin(="[^"]*")?/g, '')
+      },
+    },
     webExtension({
       // The plugin reads manifest.json and handles all entry points.
       // TypeScript source paths in the manifest are compiled automatically.
