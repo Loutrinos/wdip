@@ -1,225 +1,185 @@
 ﻿import type { DebugScanResult, ExtensionRequest, ExtensionResponse } from '@wdip/shared'
 
+// log() is defined in the inline script in popup.html — declared here for TS
+declare function log(msg: string): void
+
 // ─── DOM refs ────────────────────────────────────────────────────────────────
 
-const elTurnNumber  = document.getElementById('turn-number')!
-const elTurnCount   = document.getElementById('turn-count')!
-const elWrongPage   = document.getElementById('wrong-page')!
-const elActions     = document.getElementById('actions-section')!
-const elEndForm     = document.getElementById('end-form')!
-const elToast       = document.getElementById('toast')!
-const elDebugOut    = document.getElementById('debug-output') as HTMLDivElement
-const elStatus      = document.getElementById('init-status')!
-
-const btnCapture    = document.getElementById('btn-capture')     as HTMLButtonElement
-const btnEnd        = document.getElementById('btn-end')         as HTMLButtonElement
-const btnReset      = document.getElementById('btn-reset')       as HTMLButtonElement
-const btnSaveOk     = document.getElementById('btn-save-confirm') as HTMLButtonElement
+const elActions   = document.getElementById('actions-section') as HTMLElement
+const elEndForm   = document.getElementById('end-form')        as HTMLElement
+const elDebugOut  = document.getElementById('debug-output')    as HTMLElement
+const btnCapture  = document.getElementById('btn-capture')     as HTMLButtonElement
+const btnEnd      = document.getElementById('btn-end')         as HTMLButtonElement
+const btnReset    = document.getElementById('btn-reset')       as HTMLButtonElement
+const btnSaveOk   = document.getElementById('btn-save-confirm') as HTMLButtonElement
 const btnSaveCancel = document.getElementById('btn-save-cancel') as HTMLButtonElement
-const btnDebug      = document.getElementById('btn-debug')       as HTMLButtonElement
-const inputOpponent = document.getElementById('input-opponent')  as HTMLInputElement
+const btnDebug    = document.getElementById('btn-debug')       as HTMLButtonElement
+const inputOpponent = document.getElementById('input-opponent') as HTMLInputElement
 
-// ─── Module-level tab id (set during init) ────────────────────────────────────
+log('Module loaded, wiring buttons...')
+
+// ─── Tab id ──────────────────────────────────────────────────────────────────
 
 let activeTabId: number | null = null
 
 // ─── Communication ───────────────────────────────────────────────────────────
 
 async function send(msg: ExtensionRequest): Promise<ExtensionResponse | null> {
-  const tabId = activeTabId ?? await freshTabId()
-  if (!tabId) { showStatus('No active tab found'); return null }
+  if (!activeTabId) {
+    log('send() called but no activeTabId')
+    return null
+  }
+  log('Sending ' + msg.type + ' to tab ' + activeTabId)
   try {
-    return await chrome.tabs.sendMessage<ExtensionRequest, ExtensionResponse>(tabId, msg)
+    const res = await chrome.tabs.sendMessage<ExtensionRequest, ExtensionResponse>(activeTabId, msg)
+    log('Response: ' + JSON.stringify(res).slice(0, 120))
+    return res
   } catch (e) {
-    showStatus('Content script not reachable: ' + String(e))
+    log('sendMessage error: ' + String(e))
     return null
   }
 }
 
-async function freshTabId(): Promise<number | null> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  return tab?.id ?? null
-}
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null
-function showToast(text: string, type: 'success' | 'error' | 'warning' = 'success') {
-  elToast.textContent = text
-  elToast.className = `banner ${type}`
-  if (toastTimer) clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => elToast.classList.add('hidden'), 4000)
-}
-
-function showStatus(msg: string) {
-  elStatus.textContent = msg
-  elStatus.classList.remove('hidden')
-}
-
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 
-function showActions() {
-  elWrongPage.classList.add('hidden')
-  elActions.classList.remove('hidden')
-  elStatus.classList.add('hidden')
-}
-
-function showWrongPage(msg?: string) {
-  elActions.classList.add('hidden')
-  elWrongPage.classList.remove('hidden')
-  if (msg) elWrongPage.innerHTML = msg
-}
-
-function showEndForm() {
-  elActions.classList.add('hidden')
-  elEndForm.classList.remove('hidden')
-  inputOpponent.focus()
-}
-
-function hideEndForm() {
-  elEndForm.classList.add('hidden')
-  elActions.classList.remove('hidden')
-}
+function show(el: HTMLElement) { el.style.display = '' }
+function hide(el: HTMLElement) { el.style.display = 'none' }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 async function onCapture() {
-  btnCapture.disabled = true
+  log('Capture clicked')
   const res = await send({ type: 'CAPTURE_TURN' })
-  btnCapture.disabled = false
   if (res?.type === 'TURN_CAPTURED') {
-    elTurnCount.textContent = String(res.turnCount)
-    showToast(`Turn ${res.turnNumber} captured`)
-  } else {
-    showToast('Capture failed — is content script running?', 'error')
-  }
-}
-
-async function onSaveConfirm() {
-  const opponent = inputOpponent.value.trim() || 'Unknown'
-  const resultEl = document.querySelector<HTMLInputElement>('input[name="result"]:checked')
-  const result = (resultEl?.value ?? 'unknown') as 'win' | 'loss' | 'unknown'
-  btnSaveOk.disabled = true
-  const res = await send({ type: 'END_GAME', opponent, result, myDeck: [] })
-  btnSaveOk.disabled = false
-  if (res?.type === 'GAME_SAVED') {
-    hideEndForm()
-    elTurnCount.textContent = '0'
-    elTurnNumber.textContent = '—'
-    inputOpponent.value = ''
-    showToast('Game saved!')
-  } else {
-    showToast('Save failed — check DevTools', 'error')
+    log('Turn ' + res.turnNumber + ' captured, total=' + res.turnCount)
   }
 }
 
 async function onReset() {
-  const res = await send({ type: 'RESET_SESSION' })
-  if (res?.type === 'SESSION_RESET') {
-    elTurnCount.textContent = '0'
-    elTurnNumber.textContent = '—'
-    showToast('Session reset', 'warning')
-  }
+  log('Reset clicked')
+  await send({ type: 'RESET_SESSION' })
 }
 
-// ─── Debug panel ──────────────────────────────────────────────────────────────
+function onEndClick() {
+  log('End clicked, showing form')
+  hide(elActions)
+  show(elEndForm)
+  inputOpponent.focus()
+}
 
-function renderDebug(scan: DebugScanResult) {
-  const lines: string[] = [`<b>URL:</b> ${scan.url}`, '']
-  lines.push('<b>Selectors:</b>')
-  for (const r of scan.results) {
-    const ok = r.found ? '<span class="ok">✓</span>' : '<span class="fail">✗</span>'
-    const key = r.selector.split(':')[0]
-    const detail = r.found ? ` (${r.childCount} children) "${r.text?.slice(0, 60) ?? ''}"` : ''
-    lines.push(`${ok} ${key}${detail}`)
+function onCancelSave() {
+  hide(elEndForm)
+  show(elActions)
+}
+
+async function onSaveConfirm() {
+  log('Save clicked')
+  const opponent = inputOpponent.value.trim() || 'Unknown'
+  const resultEl = document.querySelector<HTMLInputElement>('input[name="result"]:checked')
+  const result = (resultEl?.value ?? 'unknown') as 'win' | 'loss' | 'unknown'
+  const res = await send({ type: 'END_GAME', opponent, result, myDeck: [] })
+  if (res?.type === 'GAME_SAVED') {
+    hide(elEndForm)
+    show(elActions)
+    log('Game saved: ' + res.gameId)
   }
-  lines.push('')
-  lines.push('<b>History log (last lines):</b>')
-  if (scan.chatRecentLines.length === 0) {
-    lines.push('<span class="fail">empty</span>')
-  } else {
-    scan.chatRecentLines.forEach(l => lines.push(`<span class="dim">${l}</span>`))
-  }
-  lines.push('')
-  lines.push(`<b>Live state:</b> hp me=${scan.liveState.lifePoints.me} opp=${scan.liveState.lifePoints.opponent} active=${scan.liveState.activePlayer}`)
-  elDebugOut.innerHTML = lines.join('\n')
-  elDebugOut.classList.remove('hidden')
 }
 
 async function onDebugScan() {
-  btnDebug.textContent = '⏳ Scanning…'
-  btnDebug.disabled = true
+  log('Scan clicked, activeTabId=' + activeTabId)
+  show(elDebugOut)
+  elDebugOut.style.display = 'block'
+  elDebugOut.textContent = 'Scanning...'
+
+  // Even if content script isn't connected, show tab info
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  let out = 'Tab id: ' + (tab?.id ?? 'none') + '\nURL: ' + (tab?.url ?? 'none') + '\n\n'
+
+  if (!activeTabId && tab?.id) activeTabId = tab.id
+
   const res = await send({ type: 'DEBUG_SCAN' })
-  btnDebug.textContent = '🔍 Scan DOM'
-  btnDebug.disabled = false
   if (res?.type === 'DEBUG_SCAN_RESULT') {
-    renderDebug(res.scan)
+    const s = res.scan
+    out += 'Content script: connected\n\n'
+    out += 'Selectors:\n'
+    for (const r of s.results) {
+      out += (r.found ? '[OK]' : '[XX]') + ' ' + r.selector + '\n'
+      if (r.found) out += '     text: ' + (r.text ?? '') + '\n'
+    }
+    out += '\nHistory lines:\n'
+    if (s.chatRecentLines.length === 0) {
+      out += '  (none found)\n'
+    } else {
+      s.chatRecentLines.forEach(l => { out += '  ' + l + '\n' })
+    }
+    out += '\nLive state: ' + JSON.stringify(s.liveState)
   } else {
-    elDebugOut.innerHTML = `<span class="fail">No response from content script.<br>Try: reload the tcg-arena.fr tab, then reopen this popup.</span>`
-    elDebugOut.classList.remove('hidden')
+    out += 'Content script: NOT CONNECTED\n'
+    out += '(no response to DEBUG_SCAN)\n\n'
+    out += 'Try:\n1. Reload the tcg-arena.fr tab (F5)\n2. Close & reopen this popup'
   }
+  elDebugOut.textContent = out
 }
 
-// ─── Wire buttons immediately (before any async code) ────────────────────────
-// This ensures clicks always work even if init() throws.
+// ─── Wire buttons immediately ─────────────────────────────────────────────────
 
-btnCapture.addEventListener('click', onCapture)
-btnEnd.addEventListener('click', showEndForm)
-btnReset.addEventListener('click', onReset)
-btnSaveOk.addEventListener('click', onSaveConfirm)
-btnSaveCancel.addEventListener('click', hideEndForm)
-btnDebug.addEventListener('click', onDebugScan)
+try {
+  btnCapture.addEventListener('click', onCapture)
+  btnEnd.addEventListener('click', onEndClick)
+  btnReset.addEventListener('click', onReset)
+  btnSaveOk.addEventListener('click', onSaveConfirm)
+  btnSaveCancel.addEventListener('click', onCancelSave)
+  btnDebug.addEventListener('click', onDebugScan)
+  log('Buttons wired OK')
+} catch (e) {
+  log('ERROR wiring buttons: ' + String(e))
+}
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 async function init() {
+  log('init() start')
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  log('Active tab: id=' + tab?.id + ' url=' + (tab?.url ?? 'none'))
+
   if (!tab?.id) {
-    showWrongPage('Could not get active tab.')
+    log('No tab found, stopping')
     return
   }
 
   activeTabId = tab.id
 
   if (tab.url && !tab.url.includes('tcg-arena.fr')) {
-    showWrongPage(`Not a tcg-arena.fr tab.<br><small>${tab.url}</small>`)
+    log('Wrong URL: ' + tab.url)
     return
   }
 
-  // Ping — content script may already be running
+  // First ping
   let ping = await send({ type: 'GET_STATUS' })
 
   if (!ping) {
-    // Try to inject content script (needed when tab was open before extension loaded)
-    showStatus('Injecting content script…')
+    log('No response, trying to inject content script...')
     try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content-game.js'] })
-      await new Promise(r => setTimeout(r, 500))
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['src/content-game.js'],
+      })
+      log('Injection succeeded, waiting 600ms...')
+      await new Promise(r => setTimeout(r, 600))
+      ping = await send({ type: 'GET_STATUS' })
     } catch (e) {
-      showStatus('Injection failed: ' + String(e))
+      log('Injection failed: ' + String(e))
     }
-    ping = await send({ type: 'GET_STATUS' })
   }
 
   if (!ping) {
-    showWrongPage(
-      'Could not connect to the game page.<br>' +
-      'Make sure you are inside an active game room.<br>' +
-      '<b>Click "🔍 Scan DOM" below to diagnose.</b>'
-    )
+    log('Still no response after injection attempt')
     return
   }
 
-  showActions()
-  if (ping.type === 'STATUS') {
-    elTurnNumber.textContent = String(ping.currentTurnNumber)
-    elTurnCount.textContent  = String(ping.turnCount)
-  }
+  log('Content script connected! Status: ' + JSON.stringify(ping))
+  show(elActions)
 }
 
-// Visible error catch
-window.addEventListener('unhandledrejection', e => {
-  showStatus('Error: ' + String(e.reason))
-})
-
-init().catch(e => showStatus('Init failed: ' + String(e)))
+init().catch(e => log('init() threw: ' + String(e)))

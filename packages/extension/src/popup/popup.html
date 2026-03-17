@@ -13,35 +13,20 @@
   </header>
 
   <div id="app">
-    <!-- Status section -->
-    <section id="status-section">
-      <div class="stat">
-        <span class="label">Turn</span>
-        <span id="turn-number" class="value">—</span>
-      </div>
-      <div class="stat">
-        <span class="label">Captured</span>
-        <span id="turn-count" class="value">0</span>
-      </div>
-    </section>
-
-    <!-- Not on tcg-arena.fr warning -->
-    <div id="wrong-page" class="hidden banner warning">
-      Open a game on <strong>tcg-arena.fr</strong> to start recording.
-    </div>
+    <!-- Diagnostic log — always visible, updated by JS -->
+    <div id="diag" style="font-family:monospace;font-size:10px;padding:6px 10px;background:#0a0a14;color:#aaa;white-space:pre-wrap;word-break:break-all;min-height:40px;border-bottom:1px solid #2a2a4a;">Loading…</div>
 
     <!-- Main actions -->
-    <section id="actions-section" class="hidden">
+    <section id="actions-section" style="display:none">
       <button id="btn-capture" class="btn primary">📸 Capture Turn</button>
       <button id="btn-end" class="btn danger">🏁 End &amp; Save Game</button>
-      <button id="btn-reset" class="btn ghost" title="Discard session and start fresh">↺ Reset</button>
+      <button id="btn-reset" class="btn ghost">↺ Reset</button>
     </section>
 
-    <!-- End-game form (hidden until "End & Save" is clicked) -->
-    <section id="end-form" class="hidden">
+    <!-- End-game form -->
+    <section id="end-form" style="display:none">
       <h3>Save Game</h3>
-      <label>
-        Opponent
+      <label>Opponent
         <input id="input-opponent" type="text" placeholder="Opponent name" autocomplete="off" />
       </label>
       <label>Result</label>
@@ -56,18 +41,31 @@
       </div>
     </section>
 
-    <!-- Status message toast -->
-    <div id="toast" class="hidden banner"></div>
-
-    <!-- Init status (shows errors from init()) -->
-    <div id="init-status" class="hidden banner warning" style="font-size:11px;word-break:break-all;"></div>
-
     <!-- Debug panel -->
     <section id="debug-section">
       <button id="btn-debug" class="btn ghost" style="width:100%;font-size:11px;">🔍 Scan DOM</button>
-      <div id="debug-output" class="hidden"></div>
+      <div id="debug-output" style="display:none"></div>
     </section>
   </div>
+
+  <!-- Non-module script: catches ALL errors including module crashes -->
+  <script>
+    var diag = document.getElementById('diag');
+    function log(msg) {
+      diag.textContent += '\n' + msg;
+      console.log('[popup]', msg);
+    }
+    window.onerror = function(msg, src, line, col, err) {
+      diag.style.color = '#e03b3b';
+      log('JS ERROR: ' + msg + ' (' + src + ':' + line + ')');
+      if (err && err.stack) log(err.stack);
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      diag.style.color = '#e03b3b';
+      log('UNHANDLED PROMISE: ' + e.reason);
+    });
+    log('HTML loaded, extension id: ' + (chrome && chrome.runtime && chrome.runtime.id || 'none'));
+  </script>
 
   <script type="module" src="popup.ts"></script>
 </body>
